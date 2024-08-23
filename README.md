@@ -36,7 +36,7 @@
 ### 四、自定义启动时间
 
 编辑 **.github/workflows/run.yml**
-修改其中**cron**语句的判断时间为UTC时间，如UTC时间0点，运行的时间是北京时间8点，即**UTC=北京时间-8**。
+修改其中**cron**语句,cron（UTC时间）: '39 0,8 * * *,0,8为触发工作流的小时，39表示分钟，运行的北京时间即**北京时间=UTC+8**。
 
 ### 五、感谢列表
 本项目基于https://github.com/xunichanghuan/mimotion 项目修改，特此感谢
