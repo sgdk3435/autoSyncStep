@@ -219,12 +219,17 @@ def main(_user, _passwd, min_1, max_1):
 
 
 # 获取时间戳
-def get_time():
+def get_time1():
     url = 'http://api.m.taobao.com/rest/api3.do?api=mtop.common.getTimestamp'
     response = requests.get(url, headers=headers).json()
     t = response['data']['t']
     return t
 
+# 获取时间戳
+def get_time():
+    # 获取当前时间的时间戳
+   t = int(time.time())
+   return t
 
 # 获取app_token
 def get_app_token(login_token):
