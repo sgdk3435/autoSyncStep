@@ -9,6 +9,13 @@ import time
 
 import requests
 
+# 检查命令行参数
+if len(sys.argv) < 5:
+    print("使用方法: python main.py <用户名> <密码> <是否开启天气True/False> <地区名称或NO>")
+    print("示例: python main.py 13812345678 mypassword True 北京")
+    print("示例: python main.py user@email.com mypassword False NO")
+    sys.exit(1)
+
 # 开启根据地区天气情况降低步数（默认关闭）
 open_get_weather = sys.argv[3]
 # 设置获取天气的地区（上面开启后必填）如：area = "宁波"
@@ -28,35 +35,54 @@ headers = {'User-Agent': 'MiFit/5.3.0 (iPhone; iOS 14.7.1; Scale/3.00)'}
 # 获取区域天气情况
 def getWeather():
     if area == "NO":
-        print(area == "NO")
+        print("未启用天气功能")
         return
     else:
         global K, type
         url = 'http://wthrcdn.etouch.cn/weather_mini?city=' + area
         hea = {'User-Agent': 'Mozilla/5.0'}
-        r = requests.get(url=url, headers=hea)
-        if r.status_code == 200:
-            result = r.text
-            res = json.loads(result)
-            if "多云" in res['data']['forecast'][0]['type']:
-                K = K_dict["多云"]
-            elif "阴" in res['data']['forecast'][0]['type']:
-                K = K_dict["阴"]
-            elif "小雨" in res['data']['forecast'][0]['type']:
-                K = K_dict["小雨"]
-            elif "中雨" in res['data']['forecast'][0]['type']:
-                K = K_dict["中雨"]
-            elif "大雨" in res['data']['forecast'][0]['type']:
-                K = K_dict["大雨"]
-            elif "暴雨" in res['data']['forecast'][0]['type']:
-                K = K_dict["暴雨"]
-            elif "大暴雨" in res['data']['forecast'][0]['type']:
-                K = K_dict["大暴雨"]
-            elif "特大暴雨" in res['data']['forecast'][0]['type']:
-                K = K_dict["特大暴雨"]
-            type = res['data']['forecast'][0]['type']
-        else:
-            print("获取天气情况出错")
+        try:
+            r = requests.get(url=url, headers=hea, timeout=10)
+            if r.status_code == 200:
+                result = r.text
+                res = json.loads(result)
+                
+                # 检查API响应是否包含所需数据
+                if 'data' not in res or 'forecast' not in res['data'] or len(res['data']['forecast']) == 0:
+                    print(f"天气API返回数据格式异常：{result[:200]}")
+                    return
+                
+                weather_type = res['data']['forecast'][0]['type']
+                print(f"获取到{area}天气：{weather_type}")
+                
+                if "多云" in weather_type:
+                    K = K_dict["多云"]
+                elif "阴" in weather_type:
+                    K = K_dict["阴"]
+                elif "小雨" in weather_type:
+                    K = K_dict["小雨"]
+                elif "中雨" in weather_type:
+                    K = K_dict["中雨"]
+                elif "大雨" in weather_type:
+                    K = K_dict["大雨"]
+                elif "暴雨" in weather_type:
+                    K = K_dict["暴雨"]
+                elif "大暴雨" in weather_type:
+                    K = K_dict["大暴雨"]
+                elif "特大暴雨" in weather_type:
+                    K = K_dict["特大暴雨"]
+                else:
+                    print(f"未知天气类型：{weather_type}，使用默认系数")
+                
+                type = weather_type
+            else:
+                print(f"获取天气情况失败，状态码：{r.status_code}")
+        except requests.exceptions.RequestException as e:
+            print(f"获取天气情况网络错误：{e}")
+        except json.JSONDecodeError as e:
+            print(f"天气数据解析错误：{e}")
+        except Exception as e:
+            print(f"获取天气情况出错：{e}")
 
 
 # 获取北京时间确定随机步数&启动主函数
@@ -64,48 +90,117 @@ def getBeijinTime():
     global K, type
     K = 1.0
     type = ""
-    hea = {'User-Agent': 'Mozilla/5.0'}
-    url = r'https://apps.game.qq.com/CommArticle/app/reg/gdate.php'
+    
     if open_get_weather == "True":
         getWeather()
-    r = requests.get(url=url, headers=hea)
-    if r.status_code == 200:
-        result = r.text
-        pattern = re.compile('\\d{4}-\\d{2}-\\d{2} (\\d{2}):\\d{2}:\\d{2}')
-        find = re.search(pattern, result)
-        hour = find.group(1)
+    
+    # 使用本地时间计算（北京时间 UTC+8）
+    try:
+        # 首先尝试从API获取时间
+        hour = get_current_hour_from_api()
+        if hour is None:
+            # 如果API失败，使用本地时间
+            print("API获取时间失败，使用本地时间")
+            beijing_time = datetime.datetime.now() + datetime.timedelta(hours=8)
+            hour = beijing_time.hour
+            print(f"使用本地计算的北京时间：{beijing_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # 计算步数范围
         min_ratio = max(math.ceil((int(hour) / 3) - 1), 0)
         max_ratio = math.ceil(int(hour) / 3)
         min_1 = 3550 * min_ratio
         max_1 = 3550 * max_ratio
         min_1 = int(K * min_1)
         max_1 = int(K * max_1)
-    else:
-        print("获取北京时间失败")
-        return
-    if min_1 != 0 and max_1 != 0:
+        
+        print(f"当前小时：{hour}，步数范围：{min_1} - {max_1}")
+        
+        # 执行主程序逻辑
         user_mi = sys.argv[1]
         # 登录密码
         passwd_mi = sys.argv[2]
         user_list = user_mi.split('#')
         passwd_list = passwd_mi.split('#')
-        if len(user_list) == len(passwd_list):
-            if K != 1.0:
-                msg_mi = "由于天气" + type + "，已设置降低步数,系数为" + str(K) + "。\n"
-            else:
-                msg_mi = ""
-            for user_mi, passwd_mi in zip(user_list, passwd_list):
-                msg_mi += main(user_mi, passwd_mi, min_1, max_1)
-                # print(msg_mi)
-    else:
-        print("当前主人设置了0步数呢，本次不提交")
-        return
+        
+        if len(user_list) != len(passwd_list):
+            print("用户名和密码数量不匹配！")
+            return
+        
+        if min_1 == 0 and max_1 == 0:
+            print("步数范围无效，本次不提交")
+            return
+            
+        if K != 1.0:
+            msg_mi = "由于天气" + type + "，已设置降低步数,系数为" + str(K) + "。\n"
+        else:
+            msg_mi = ""
+            
+        for user_mi, passwd_mi in zip(user_list, passwd_list):
+            msg_mi += main(user_mi, passwd_mi, min_1, max_1)
+            # print(msg_mi)
+        
+    except Exception as e:
+        print(f"时间获取出错：{e}")
+        # 使用默认步数范围
+        min_1 = 8000
+        max_1 = 15000
+        print(f"使用默认步数范围：{min_1} - {max_1}")
+        
+        try:
+            # 即使时间获取失败，也尝试执行主程序
+            user_mi = sys.argv[1]
+            passwd_mi = sys.argv[2]
+            user_list = user_mi.split('#')
+            passwd_list = passwd_mi.split('#')
+            
+            if len(user_list) == len(passwd_list):
+                for user_mi, passwd_mi in zip(user_list, passwd_list):
+                    main(user_mi, passwd_mi, min_1, max_1)
+        except Exception as inner_e:
+            print(f"程序执行出错：{inner_e}")
+
+
+def get_current_hour_from_api():
+    """尝试从多个API获取当前时间"""
+    # API列表，按优先级排序
+    time_apis = [
+        {
+            'url': 'http://worldtimeapi.org/api/timezone/Asia/Shanghai',
+            'parser': lambda r: datetime.datetime.fromisoformat(r.json()['datetime'].replace('Z', '+00:00')).hour
+        },
+        {
+            'url': 'https://timeapi.io/api/Time/current/zone?timeZone=Asia/Shanghai',
+            'parser': lambda r: int(r.json()['hour'])
+        },
+        {
+            'url': 'http://api.timezonedb.com/v2.1/get-time-zone?key=demo&format=json&by=zone&zone=Asia/Shanghai',
+            'parser': lambda r: datetime.datetime.fromtimestamp(r.json()['timestamp']).hour
+        }
+    ]
+    
+    for api in time_apis:
+        try:
+            print(f"尝试从 {api['url']} 获取时间...")
+            response = requests.get(api['url'], timeout=5)
+            if response.status_code == 200:
+                hour = api['parser'](response)
+                print(f"成功获取时间，当前小时：{hour}")
+                return hour
+        except Exception as e:
+            print(f"API {api['url']} 失败：{e}")
+            continue
+    
+    return None
 
 
 # 获取登录code
 def get_code(location):
     code_pattern = re.compile("(?<=access=).*?(?=&)")
-    code = code_pattern.findall(location)[0]
+    matches = code_pattern.findall(location)
+    if not matches:
+        print(f"无法从Location头部提取授权码：{location}")
+        raise ValueError("无法提取授权码")
+    code = matches[0]
     return code
 
 
@@ -129,10 +224,36 @@ def login(user, password):
         "token": "access"
     }
     r1 = requests.post(url1, data=data1, headers=headers, allow_redirects=False)
+    
+    # 检查是否有Location头部
+    if "Location" not in r1.headers:
+        print(f"登录失败：服务器未返回重定向地址。状态码：{r1.status_code}")
+        if r1.status_code == 401:
+            print("可能的原因：用户名或密码错误")
+        elif r1.status_code == 403:
+            print("可能的原因：账号被锁定或需要验证")
+        else:
+            print(f"响应内容：{r1.text[:200]}...")  # 显示前200个字符
+        return 0, 0
+    
     location = r1.headers["Location"]
+    
+    # 检查重定向地址中是否包含错误信息
+    if "error=" in location:
+        error_match = re.search(r"error=([^&]+)", location)
+        if error_match:
+            error_code = error_match.group(1)
+            if error_code == "401":
+                print("登录失败：用户名或密码错误")
+            elif error_code == "403":
+                print("登录失败：账号被锁定或需要验证")
+            else:
+                print(f"登录失败：错误代码 {error_code}")
+        return 0, 0
     try:
         code = get_code(location)
-    except:
+    except Exception as e:
+        print(f"获取授权码失败：{str(e)}")
         return 0, 0
     # print("access_code获取成功！")
     # print(code)
@@ -165,13 +286,21 @@ def login(user, password):
             "source": "com.xiaomi.hm.health",
             "third_name": "email",
         }
-    r2 = requests.post(url2, data=data2, headers=headers).json()
-    login_token = r2["token_info"]["login_token"]
-    # print("login_token获取成功！")
-    # print(login_token)
-    userid = r2["token_info"]["user_id"]
-    # print("userid获取成功！")
-    # print(userid)
+    try:
+        r2 = requests.post(url2, data=data2, headers=headers).json()
+        if "token_info" not in r2:
+            print(f"获取token失败：{r2}")
+            return 0, 0
+        
+        login_token = r2["token_info"]["login_token"]
+        # print("login_token获取成功！")
+        # print(login_token)
+        userid = r2["token_info"]["user_id"]
+        # print("userid获取成功！")
+        # print(userid)
+    except Exception as e:
+        print(f"获取登录令牌失败：{str(e)}")
+        return 0, 0
 
     return login_token, userid
 
@@ -185,10 +314,12 @@ def main(_user, _passwd, min_1, max_1):
     if user == '' or password == '':
         print("用户名或密码填写有误！")
         return
+    print(f"尝试登录用户：{user[:3]}****{user[7:]}")
     login_token, userid = login(user, password)
     if login_token == 0:
-        print("登陆失败！")
-        return "login fail!"
+        error_msg = f"用户 {user[:3]}****{user[7:]} 登录失败！"
+        print(error_msg)
+        return error_msg + "\n"
 
     t = get_time()
 
