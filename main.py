@@ -6,8 +6,37 @@ import random
 import re
 import sys
 import time
+import string
+from datetime import timedelta
 
 import requests
+
+# 安全多账户配置
+SAFE_MODE_CONFIG = {
+    'base_delay': 60,  # 基础延迟时间（秒）
+    'random_delay_range': (15, 45),  # 随机延迟范围（秒）
+    'max_retries': 3,  # 最大重试次数
+    'user_agents': [
+        'MiFit/5.3.0 (iPhone; iOS 14.7.1; Scale/3.00)',
+        'MiFit/5.2.9 (iPhone; iOS 15.1; Scale/3.00)',
+        'MiFit/5.4.1 (iPhone; iOS 14.8; Scale/3.00)',
+        'Zepp/6.1.0 (iPhone; iOS 15.2; Scale/3.00)'
+    ]
+}
+
+def human_like_delay(account_index=1, total_accounts=1):
+    """模拟人性化延迟，避免被检测为机器人"""
+    base_delay = SAFE_MODE_CONFIG['base_delay']
+    min_random, max_random = SAFE_MODE_CONFIG['random_delay_range']
+    random_delay = random.randint(min_random, max_random)
+    delay = base_delay + random_delay
+    
+    # 静默等待，不显示进度
+    time.sleep(delay)
+
+def get_random_user_agent():
+    """获取随机User-Agent"""
+    return random.choice(SAFE_MODE_CONFIG['user_agents'])
 
 # 开启根据地区天气情况降低步数（默认关闭）
 open_get_weather = sys.argv[3]
@@ -94,9 +123,18 @@ def getBeijinTime():
                 msg_mi = "由于天气" + type + "，已设置降低步数,系数为" + str(K) + "。\n"
             else:
                 msg_mi = ""
-            for user_mi, passwd_mi in zip(user_list, passwd_list):
-                msg_mi += main(user_mi, passwd_mi, min_1, max_1)
-                # print(msg_mi)
+            
+            # 安全多账户处理
+            total_accounts = len(user_list)
+            
+            for i, (user_mi, passwd_mi) in enumerate(zip(user_list, passwd_list), 1):
+                result = main(user_mi, passwd_mi, min_1, max_1)
+                msg_mi += result
+                
+                # 如果不是最后一个账户，添加安全延迟
+                if i < total_accounts:
+                    human_like_delay(i, total_accounts)
+            # print(msg_mi)
     else:
         print("当前主人设置了0步数呢，本次不提交")
         return
@@ -109,8 +147,8 @@ def get_code(location):
     return code
 
 
-# 登录
-def login(user, password):
+# 登录 - 增强版本，支持重试和随机User-Agent
+def login(user, password, retry_count=0):
     is_phone = False
     if re.match(r'\d{11}', user):
         is_phone = True
@@ -118,9 +156,12 @@ def login(user, password):
         url1 = "https://api-user.huami.com/registrations/+86" + user + "/tokens"
     else:
         url1 = "https://api-user.huami.com/registrations/" + user + "/tokens"
+    
     headers = {
         "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2"
+        "User-Agent": get_random_user_agent(),  # 使用随机User-Agent
+        "Accept": "application/json",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
     }
     data1 = {
         "client_id": "HuaMi",
@@ -128,8 +169,30 @@ def login(user, password):
         "redirect_uri": "https://s3-us-west-2.amazonaws.com/hm-registration/successsignin.html",
         "token": "access"
     }
-    r1 = requests.post(url1, data=data1, headers=headers, allow_redirects=False)
-    location = r1.headers["Location"]
+    
+    try:
+        r1 = requests.post(url1, data=data1, headers=headers, allow_redirects=False, timeout=30)
+        
+        # 处理429错误
+        if r1.status_code == 429:
+            if retry_count < SAFE_MODE_CONFIG['max_retries'] - 1:
+                wait_time = (retry_count + 1) * 60  # 递增等待时间
+                time.sleep(wait_time)
+                return login(user, password, retry_count + 1)
+            else:
+                return 0, 0
+        
+        if r1.status_code != 302:
+            return 0, 0
+            
+        location = r1.headers["Location"]
+        
+    except requests.exceptions.RequestException as e:
+        if retry_count < SAFE_MODE_CONFIG['max_retries'] - 1:
+            time.sleep(30)
+            return login(user, password, retry_count + 1)
+        return 0, 0
+    
     try:
         code = get_code(location)
     except:
@@ -165,13 +228,20 @@ def login(user, password):
             "source": "com.xiaomi.hm.health",
             "third_name": "email",
         }
-    r2 = requests.post(url2, data=data2, headers=headers).json()
-    login_token = r2["token_info"]["login_token"]
-    # print("login_token获取成功！")
-    # print(login_token)
-    userid = r2["token_info"]["user_id"]
-    # print("userid获取成功！")
-    # print(userid)
+    
+    try:
+        r2 = requests.post(url2, data=data2, headers=headers, timeout=30).json()
+        
+        if "token_info" not in r2:
+            return 0, 0
+            
+        login_token = r2["token_info"]["login_token"]
+        userid = r2["token_info"]["user_id"]
+        
+    except requests.exceptions.RequestException as e:
+        return 0, 0
+    except (KeyError, json.JSONDecodeError) as e:
+        return 0, 0
 
     return login_token, userid
 
