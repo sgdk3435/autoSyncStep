@@ -7,7 +7,7 @@
 // @author       sgdk3435
 // @homepage     https://github.com/geoisam/FuckScripts/blob/main/zepplife.py
 // @supportURL   https://github.com/geoisam/FuckScripts/issues
-// @tips         此脚本一直为 开源免费 使用，如果你是从某些地方买的话，你就是被骗了
+// @tips         移植geoisam的脚本到GitHub上自动运行，修改登录模式，此脚本一直为 开源免费 使用。
 """
 
 
