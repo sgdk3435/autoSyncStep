@@ -34,15 +34,27 @@ isLog = True
 # 有批量登录批量记录Token需求的可以自己改写避免频繁请求
 # Token的有效期好像是10天左右，尽量每次运行都去刷新一下
 current_dir = os.path.dirname(os.path.abspath(__file__))
-file_path = os.path.join(current_dir, "token.txt")
 
 
-def logToken(lt):
+def get_token_file_path(username):
+    """为每个账号生成唯一的token文件路径"""
+    import hashlib
+    # 使用MD5哈希用户名，避免文件名中的特殊字符
+    username_hash = hashlib.md5(username.encode('utf-8')).hexdigest()[:8]
+    filename = f"token_{username_hash}.txt"
+    return os.path.join(current_dir, filename)
+
+
+def logToken(lt, username):
+    """保存token到用户专属文件"""
+    file_path = get_token_file_path(username)
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(lt)
 
 
-def readToken():
+def readToken(username):
+    """读取用户专属的token"""
+    file_path = get_token_file_path(username)
     if os.path.isfile(file_path):
         with open(file_path, "r", encoding="utf-8") as f:
             lt = f.read().strip()
@@ -92,7 +104,7 @@ def login(uu, pwd):
     if res2.status_code == 200:
         res2 = res2.json()
         if isLog == True:
-            logToken(res2["token_info"]["login_token"])
+            logToken(res2["token_info"]["login_token"], uu)
         token_info = {
             "user_id": res2["token_info"]["user_id"],
             "app_token": res2["token_info"]["app_token"],
@@ -135,7 +147,7 @@ def getToken(lt):
 
 def main(uu, pwd):
     token, relog = False, False
-    relog = readToken()
+    relog = readToken(uu)
 
     if relog == False:
         token = login(uu, pwd)
