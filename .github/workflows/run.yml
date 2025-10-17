@@ -6,7 +6,7 @@ on:
   #pull_request:
   #  branches: [ main ]
   schedule:
-    - cron: '53 0, * * *'
+    - cron: '09 0,8 * * *'
   watch:
     types: started
   workflow_dispatch:
@@ -32,8 +32,6 @@ jobs:
           pip3 install requests
           user='${{ secrets.USER }}'
           passwd='${{ secrets.PWD }}' 
-          min_1=19900
-          max_1=28000
           open_get_weather='${{ secrets.OPEN_GET_WEATHER }}'
           area='${{ secrets.AREA }}'
-          python3 main.py ${user} ${passwd} min_1 max_1
+          python3 main.py ${user} ${passwd} ${open_get_weather} ${area}
